@@ -438,10 +438,9 @@ tr:hover td{background:var(--wine-bg)}
 <script>
 // ══════════════════════════════════════════════
 //  CONFIGURACIÓN SUPABASE
-//  → Reemplazá estos dos valores con los tuyos
 // ══════════════════════════════════════════════
 var SUPABASE_URL = 'https://rijrieymzsibaobujwzp.supabase.co';
-var SUPABASE_ANON_KEY = 'sb_publishable_IQt2cUL5Q_AGwuOa0G028Q_ynDvy1zZ';
+var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpanJpZXltenNpYmFvYnVqd3pwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODc0MzUsImV4cCI6MjA5MTg2MzQzNX0.KDWr6xNnCafg0XQfFA280lB6OKwCoIiNlmjeo6Ha2aI';
 // ══════════════════════════════════════════════
 
 var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -464,14 +463,11 @@ var DEFAULT_CATS = [
 
 var ICONS = {Sueldo:'💼',Honorarios:'💰',Asesoramiento:'🧠',Ayuda:'🤝',Venta:'🏷️','Venta dolares':'💵',Indemnizacion:'📋',Inversion:'📊',Comida:'🍽️',Alquiler:'🏠',Expensas:'🏢',Moto:'🏍️',Nafta:'⛽',Salidas:'🎭',Personal:'💡','Internet y TV':'📺',Gimnasio:'💪',Mercaderia:'🛒',Educacion:'📚',Curso:'📖',Ropa:'👕',Mate:'🧉',Yerba:'🌿',Pasaje:'🚌',Gas:'🔥',Mutual:'❤️',Peluqueria:'✂️',Uber:'🚗',Regalos:'🎁',Tarjeta:'💳',Luz:'⚡',Deportes:'⚽',Farmacia:'💊',Bazar:'🏪','Obra social':'🏥',Ferreteria:'🔧',Cerrajero:'🔑',Varios:'📦',Otros:'📦'};
 
-// ── Estado global ──
 var currentUser = null;
 var txs = [], userCats = DEFAULT_CATS.slice(), proys = [];
 var chartBarras=null,chartDona=null,chartDiario=null,chartCompara=null;
 var dashMesFiltro='', diarioMesFiltro='';
-var saving = false;
 
-// ── Helpers ──
 function el(id){return document.getElementById(id);}
 function fn(n,d){d=(d===undefined)?0:d;if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d});}
 function fmtDate(s){if(!s)return '';var p=s.split('-');return new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2])).toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'});}
@@ -486,9 +482,7 @@ function flashSaving(){el('saveLabel').textContent='GUARDANDO...';document.query
 
 setInterval(function(){el('clk').textContent=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
 
-// ══════════════════════════════════════════════
-//  AUTH
-// ══════════════════════════════════════════════
+// ── AUTH ──
 function switchAuthTab(tab){
   el('ltabLogin').classList.toggle('on', tab==='login');
   el('ltabReg').classList.toggle('on', tab==='register');
@@ -514,21 +508,25 @@ async function doRegister(){
   var {error}=await sb.auth.signUp({email,password:pass,options:{data:{full_name:name}}});
   el('regBtn').disabled=false; el('regBtn').textContent='Crear cuenta';
   if(error){showErr(error.message);}
-  else{showOk('¡Cuenta creada! Revisá tu email para confirmar (o ingresá directamente si la confirmación está desactivada).');}
+  else{showOk('¡Cuenta creada! Revisá tu email para confirmar.');}
 }
 
 async function doLogout(){
   await sb.auth.signOut();
 }
 
-// ── Escuchar cambios de sesión ──
+// ── Sesión ──
 sb.auth.onAuthStateChange(async function(event, session){
   if(session && session.user){
     currentUser = session.user;
     el('navUser').textContent = (currentUser.user_metadata && currentUser.user_metadata.full_name) ? currentUser.user_metadata.full_name.toUpperCase() : currentUser.email;
-    el('loadingScreen').classList.remove('hidden');
     el('loginScreen').classList.add('hidden');
-    await loadAllData();
+    el('loadingScreen').classList.remove('hidden');
+    try {
+      await loadAllData();
+    } catch(e) {
+      console.error('Error cargando datos:', e);
+    }
     el('loadingScreen').classList.add('hidden');
     el('mainNav').style.display='flex';
     document.querySelectorAll('.pg').forEach(function(p){p.style.display='';});
@@ -543,17 +541,14 @@ sb.auth.onAuthStateChange(async function(event, session){
   }
 });
 
-// Verificar sesión inicial
 (async function(){
   var {data:{session}}=await sb.auth.getSession();
   if(!session){
     el('loadingScreen').classList.add('hidden');
     el('loginScreen').classList.remove('hidden');
   }
-  // Si hay sesión, onAuthStateChange lo maneja
 })();
 
-// Enter en inputs de login
 document.addEventListener('keydown', function(e){
   if(e.key==='Enter'){
     if(el('formLogin').style.display!=='none') doLogin();
@@ -561,34 +556,28 @@ document.addEventListener('keydown', function(e){
   }
 });
 
-// ══════════════════════════════════════════════
-//  SUPABASE DATA
-// ══════════════════════════════════════════════
+// ── SUPABASE DATA ──
 async function loadAllData(){
   var uid = currentUser.id;
+  var r1=await sb.from('transactions').select('*').eq('user_id',uid).order('fecha',{ascending:false});
+  txs = (r1.data||[]).map(function(r){return {id:r.id,tipo:r.tipo,desc:r.descripcion,monto:parseFloat(r.monto),cat:r.categoria,fecha:r.fecha,medio:r.medio};});
 
-  // Cargar transacciones
-  var {data:txData}=await sb.from('transactions').select('*').eq('user_id',uid).order('fecha',{ascending:false});
-  txs = (txData||[]).map(function(r){return {id:r.id,tipo:r.tipo,desc:r.descripcion,monto:parseFloat(r.monto),cat:r.categoria,fecha:r.fecha,medio:r.medio};});
+  var r2=await sb.from('proyecciones').select('*').eq('user_id',uid).order('fecha',{ascending:true});
+  proys = (r2.data||[]).map(function(r){return {id:r.id,tipo:r.tipo,desc:r.descripcion,monto:parseFloat(r.monto),cat:r.categoria,fecha:r.fecha,ejecutado:r.ejecutado};});
 
-  // Cargar proyecciones
-  var {data:prData}=await sb.from('proyecciones').select('*').eq('user_id',uid).order('fecha',{ascending:true});
-  proys = (prData||[]).map(function(r){return {id:r.id,tipo:r.tipo,desc:r.descripcion,monto:parseFloat(r.monto),cat:r.categoria,fecha:r.fecha,ejecutado:r.ejecutado};});
-
-  // Cargar categorías personalizadas
-  var {data:catData}=await sb.from('user_cats').select('*').eq('user_id',uid).single();
-  if(catData && catData.cats) userCats=catData.cats;
+  var r3=await sb.from('user_cats').select('*').eq('user_id',uid).maybeSingle();
+  if(r3.data && r3.data.cats) userCats=r3.data.cats;
   else userCats=DEFAULT_CATS.slice();
 }
 
 async function saveTx_remote(tx, isNew){
   flashSaving();
   if(isNew){
-    var {data,error}=await sb.from('transactions').insert({
+    var res=await sb.from('transactions').insert({
       user_id:currentUser.id, tipo:tx.tipo, descripcion:tx.desc,
       monto:tx.monto, categoria:tx.cat, fecha:tx.fecha, medio:tx.medio
     }).select().single();
-    if(!error && data){ tx.id=data.id; }
+    if(!res.error && res.data){ tx.id=res.data.id; }
   }
   flashSave();
 }
@@ -602,11 +591,11 @@ async function deleteTx_remote(id){
 async function saveProy_remote(p, isNew){
   flashSaving();
   if(isNew){
-    var {data,error}=await sb.from('proyecciones').insert({
+    var res=await sb.from('proyecciones').insert({
       user_id:currentUser.id, tipo:p.tipo, descripcion:p.desc,
       monto:p.monto, categoria:p.cat, fecha:p.fecha, ejecutado:false
     }).select().single();
-    if(!error && data){ p.id=data.id; }
+    if(!res.error && res.data){ p.id=res.data.id; }
   } else {
     await sb.from('proyecciones').update({ejecutado:p.ejecutado}).eq('id',p.id).eq('user_id',currentUser.id);
   }
@@ -622,8 +611,8 @@ async function deleteProy_remote(id){
 async function saveCats_remote(){
   flashSaving();
   var uid=currentUser.id;
-  var {data}=await sb.from('user_cats').select('id').eq('user_id',uid).single();
-  if(data) await sb.from('user_cats').update({cats:userCats}).eq('user_id',uid);
+  var res=await sb.from('user_cats').select('id').eq('user_id',uid).maybeSingle();
+  if(res.data) await sb.from('user_cats').update({cats:userCats}).eq('user_id',uid);
   else await sb.from('user_cats').insert({user_id:uid,cats:userCats});
   flashSave();
 }
@@ -634,15 +623,12 @@ async function deleteAllTx_remote(){
   flashSave();
 }
 
-// ══════════════════════════════════════════════
-//  APP UI
-// ══════════════════════════════════════════════
+// ── APP UI ──
 function showApp(){
   el('tFecha').value=new Date().toISOString().substring(0,10);
   el('pFecha').value=new Date().toISOString().substring(0,10);
   buildCatOptions();
   renderDashboard();
-  // Activar dashboard tab
   document.querySelectorAll('.ntab').forEach(function(t){t.classList.remove('on');});
   document.querySelectorAll('.ntab')[0].classList.add('on');
   document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
@@ -1058,7 +1044,6 @@ async function handleImport(e){
       var data=JSON.parse(ev.target.result);
       if(!data.txs||!Array.isArray(data.txs))throw new Error('Formato inválido');
       if(!confirm('¿Importar '+data.txs.length+' movimientos? Se agregarán a los existentes.'))return;
-      // Insert all transactions
       el('loadingScreen').classList.remove('hidden');
       for(var i=0;i<data.txs.length;i++){
         var t=data.txs[i];
