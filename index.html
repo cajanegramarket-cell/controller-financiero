@@ -203,7 +203,6 @@ tr:hover td{background:var(--wine-bg)}
     </div>
     <div class="login-err" id="loginErr"></div>
     <div class="login-ok" id="loginOk"></div>
-    <!-- Login form -->
     <div id="formLogin" class="login-form">
       <div class="lfield">
         <label>Email</label>
@@ -215,7 +214,6 @@ tr:hover td{background:var(--wine-bg)}
       </div>
       <button class="login-btn" id="loginBtn" onclick="doLogin()">Ingresar</button>
     </div>
-    <!-- Register form -->
     <div id="formRegister" class="login-form" style="display:none">
       <div class="lfield">
         <label>Nombre</label>
@@ -436,14 +434,12 @@ tr:hover td{background:var(--wine-bg)}
 <input type="file" id="importFile" accept=".json" style="display:none" onchange="handleImport(event)">
 
 <script>
-// ══════════════════════════════════════════════
-//  CONFIGURACIÓN SUPABASE
-// ══════════════════════════════════════════════
 var SUPABASE_URL = 'https://rijrieymzsibaobujwzp.supabase.co';
 var SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpanJpZXltenNpYmFvYnVqd3pwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYyODc0MzUsImV4cCI6MjA5MTg2MzQzNX0.KDWr6xNnCafg0XQfFA280lB6OKwCoIiNlmjeo6Ha2aI';
-// ══════════════════════════════════════════════
 
-var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+var sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storageKey: 'cf-auth-token' }
+});
 
 Chart.register(ChartDataLabels);
 Chart.defaults.plugins.datalabels = {display:false};
@@ -467,6 +463,7 @@ var currentUser = null;
 var txs = [], userCats = DEFAULT_CATS.slice(), proys = [];
 var chartBarras=null,chartDona=null,chartDiario=null,chartCompara=null;
 var dashMesFiltro='', diarioMesFiltro='';
+var _authHandled = false;
 
 function el(id){return document.getElementById(id);}
 function fn(n,d){d=(d===undefined)?0:d;if(n==null||isNaN(n))return '—';return Number(n).toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d});}
@@ -482,7 +479,6 @@ function flashSaving(){el('saveLabel').textContent='GUARDANDO...';document.query
 
 setInterval(function(){el('clk').textContent=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});},1000);
 
-// ── AUTH ──
 function switchAuthTab(tab){
   el('ltabLogin').classList.toggle('on', tab==='login');
   el('ltabReg').classList.toggle('on', tab==='register');
@@ -512,33 +508,38 @@ async function doRegister(){
 }
 
 async function doLogout(){
+  _authHandled = false;
   await sb.auth.signOut();
 }
 
 // ── Sesión ──
 sb.auth.onAuthStateChange(async function(event, session){
-  if(session && session.user){
-    currentUser = session.user;
-    el('navUser').textContent = (currentUser.user_metadata && currentUser.user_metadata.full_name) ? currentUser.user_metadata.full_name.toUpperCase() : currentUser.email;
-    el('loginScreen').classList.add('hidden');
-    el('loadingScreen').classList.remove('hidden');
-    try {
-      await loadAllData();
-    } catch(e) {
-      console.error('Error cargando datos:', e);
-    }
-    el('loadingScreen').classList.add('hidden');
-    el('mainNav').style.display='flex';
-    document.querySelectorAll('.pg').forEach(function(p){p.style.display='';});
-    showApp();
-  } else {
+  if(event === 'SIGNED_OUT'){
+    _authHandled = false;
     currentUser = null;
     txs=[]; proys=[]; userCats=DEFAULT_CATS.slice();
     el('mainNav').style.display='none';
     document.querySelectorAll('.pg').forEach(function(p){p.style.display='none';});
     el('loadingScreen').classList.add('hidden');
     el('loginScreen').classList.remove('hidden');
+    return;
   }
+  if(!session || !session.user) return;
+  if(_authHandled) return;
+  _authHandled = true;
+  currentUser = session.user;
+  el('navUser').textContent = (currentUser.user_metadata && currentUser.user_metadata.full_name) ? currentUser.user_metadata.full_name.toUpperCase() : currentUser.email;
+  el('loginScreen').classList.add('hidden');
+  el('loadingScreen').classList.remove('hidden');
+  try {
+    await loadAllData();
+  } catch(e) {
+    console.error('Error cargando datos:', e);
+  }
+  el('loadingScreen').classList.add('hidden');
+  el('mainNav').style.display='flex';
+  document.querySelectorAll('.pg').forEach(function(p){p.style.display='';});
+  showApp();
 });
 
 (async function(){
@@ -556,7 +557,6 @@ document.addEventListener('keydown', function(e){
   }
 });
 
-// ── SUPABASE DATA ──
 async function loadAllData(){
   var uid = currentUser.id;
   var r1=await sb.from('transactions').select('*').eq('user_id',uid).order('fecha',{ascending:false});
@@ -623,7 +623,6 @@ async function deleteAllTx_remote(){
   flashSave();
 }
 
-// ── APP UI ──
 function showApp(){
   el('tFecha').value=new Date().toISOString().substring(0,10);
   el('pFecha').value=new Date().toISOString().substring(0,10);
